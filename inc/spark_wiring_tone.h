@@ -1,12 +1,12 @@
 /**
  ******************************************************************************
- * @file    spark_wiring_network.h
- * @author  Satish Nair, Timothy Brown
+ * @file    spark_wiring_tone.h
+ * @author  Satish Nair
  * @version V1.0.0
- * @date    18-Mar-2014
- * @brief   Header for spark_wiring_network.cpp module
+ * @date    21-April-2014
+ * @brief   Header for spark_wiring_tone.c module
  ******************************************************************************
-  Copyright (c) 2013 Spark Labs, Inc.  All rights reserved.
+  Copyright (c) 2013-14 Spark Labs, Inc.  All rights reserved.
 
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
@@ -23,34 +23,20 @@
   ******************************************************************************
  */
 
-#ifndef __SPARK_WIRING_NETWORK_H
-#define __SPARK_WIRING_NETWORK_H
+#ifndef __SPARK_WIRING_TONE_H
+#define __SPARK_WIRING_TONE_H
 
 #include "spark_wiring.h"
 
-class NetworkClass
-{
-public:
-	NetworkClass();
-
-	uint8_t* macAddress(uint8_t* mac);
-	IPAddress localIP();
-	IPAddress subnetMask();
-	IPAddress gatewayIP();
-	char* SSID();
-	int8_t RSSI();
-	uint32_t ping(IPAddress remoteIP);
-	uint32_t ping(IPAddress remoteIP, uint8_t nTries);
-
-	friend class TCPClient;
-	friend class TCPServer;
-
-private:
-	uint32_t _functionStart;
-	uint8_t _loopCount;
-	int8_t _returnValue;
-};
-
-extern NetworkClass Network;
-
+#ifdef __cplusplus
+extern "C" {
 #endif
+
+void tone(uint8_t pin, unsigned int frequency, unsigned long duration = 0);
+void noTone(uint8_t pin);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __SPARK_WIRING_TONE_H_ */

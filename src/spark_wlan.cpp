@@ -53,6 +53,8 @@ static uint32_t lastEvent = 0;
 #define ON_EVENT_DELTA()
 #endif
 tNetappIpconfigRetArgs ip_config;
+netapp_pingreport_args_t ping_report;
+int ping_report_num;
 
 volatile uint8_t WLAN_MANUAL_CONNECT = 0; //For Manual connection, set this to 1
 volatile uint8_t WLAN_DELETE_PROFILES;
@@ -144,9 +146,82 @@ void wifi_add_profile_callback(const char *ssid,
     security_type = WLAN_SEC_UNSEC;
   }
 
-  wlan_profile_index = wlan_add_profile(security_type, (unsigned char *)ssid, strlen(ssid), NULL, 1, 0x18, 0x1e, 2, (unsigned char *)password, strlen(password));
+  // add a profile
+  switch (security_type)
+  {
+  case WLAN_SEC_UNSEC://None
+    {
+      wlan_profile_index = wlan_add_profile(security_type,    // Security type
+        (unsigned char *)ssid,                                // SSID
+        strlen(ssid),                                         // SSID length
+        NULL,                                                 // BSSID
+        1,                                                    // Priority
+        0, 0, 0, 0, 0);
+      
+      break;
+    }
+
+  case WLAN_SEC_WEP://WEP
+    {
+      // Get WEP key from string, needs converting
+      UINT32 keyLen = (strlen(password)/2); // WEP key length in bytes
+      UINT8 decKey[32]; // Longest WEP key I can find is 256-bit, or 32 bytes long
+      char byteStr[3]; byteStr[2] = '\0';
+      
+      for (UINT32 i = 0 ; i < keyLen ; i++) { // Basic loop to convert text-based WEP key to byte array, can definitely be improved
+        byteStr[0] = password[2*i]; byteStr[1] = password[(2*i)+1];
+        decKey[i] = strtoul(byteStr, NULL, 16);
+      }
+      
+      wlan_profile_index = wlan_add_profile(security_type,    // Security type
+        (unsigned char *)ssid,                                // SSID
+        strlen(ssid),                                         // SSID length
+        NULL,                                                 // BSSID
+        1,                                                    // Priority
+        keyLen,                                               // KEY length
+        0,                                                    // KEY index
+        0,
+        decKey,                                               // KEY
+        0);
+        
+      break;
+    }
+
+  case WLAN_SEC_WPA://WPA
+  case WLAN_SEC_WPA2://WPA2
+    {
+      wlan_profile_index = wlan_add_profile(security_type,    // Security type
+        (unsigned char *)ssid,                                // SSID
+        strlen(ssid),                                         // SSID length
+        NULL,                                                 // BSSID
+        1,                                                    // Priority
+        0x18,                                                 // PairwiseCipher
+        0x1e,                                                 // GroupCipher
+        2,                                                    // KEY management
+        (unsigned char *)password,                            // KEY
+        strlen(password));                                    // KEY length
+        
+      break;
+    }
+  }
 
   WLAN_SERIAL_CONFIG_DONE = 1;
+}
+
+void recreate_spark_nvmem_file(void)
+{
+  // Spark file IO on old TI Driver was corrupting nvmem
+  // so remove the entry for Spark file in CC3000 EEPROM
+  nvmem_create_entry(NVMEM_SPARK_FILE_ID, 0);
+
+  // Create new entry for Spark File in CC3000 EEPROM
+  nvmem_create_entry(NVMEM_SPARK_FILE_ID, NVMEM_SPARK_FILE_SIZE);
+
+  // Zero out our array copy of the EEPROM
+  memset(NVMEM_Spark_File_Data, 0, NVMEM_SPARK_FILE_SIZE);
+
+  // Write zeroed-out array into the EEPROM
+  nvmem_write(NVMEM_SPARK_FILE_ID, NVMEM_SPARK_FILE_SIZE, 0, NVMEM_Spark_File_Data);
 }
 
 /*******************************************************************************
@@ -211,8 +286,7 @@ void Start_Smart_Config(void)
 				LED_Toggle(LED_RGB);
 				Delay(50);
 			}
-			NVMEM_Spark_File_Data[WLAN_PROFILE_FILE_OFFSET] = 0;
-			nvmem_write(NVMEM_SPARK_FILE_ID, 1, WLAN_PROFILE_FILE_OFFSET, &NVMEM_Spark_File_Data[WLAN_PROFILE_FILE_OFFSET]);
+			recreate_spark_nvmem_file();
 			WLAN_DELETE_PROFILES = 0;
 		}
 		else
@@ -266,7 +340,7 @@ void Start_Smart_Config(void)
 	LED_On(LED_RGB);
 
 	/* Mask out all non-required events */
-	wlan_set_event_mask(HCI_EVNT_WLAN_KEEPALIVE | HCI_EVNT_WLAN_UNSOL_INIT | HCI_EVNT_WLAN_ASYNC_PING_REPORT);
+	wlan_set_event_mask(HCI_EVNT_WLAN_KEEPALIVE | HCI_EVNT_WLAN_UNSOL_INIT);
 
 	Set_NetApp_Timeout();
 
@@ -294,24 +368,10 @@ void WLAN_Async_Callback(long lEventType, char *data, unsigned char length)
 			break;
 
 		case HCI_EVNT_WLAN_UNSOL_DISCONNECT:
-			if(WLAN_CONNECTED)
-			{
-				//What if AP is Off or Out Of Range, do we still need to ARM_WLAN_WD?
-				//ARM_WLAN_WD(DISCONNECT_TO_RECONNECT);
-				CLR_WLAN_WD();
+			if (WLAN_CONNECTED) {
+				ARM_WLAN_WD(DISCONNECT_TO_RECONNECT);
 				LED_SetRGBColor(RGB_COLOR_GREEN);
 				LED_On(LED_RGB);
-			}
-			else
-			{
-				if(NVMEM_Spark_File_Data[WLAN_PROFILE_FILE_OFFSET] != 0)
-				{
-					NVMEM_Spark_File_Data[WLAN_PROFILE_FILE_OFFSET] -= 1;
-				}
-				else
-				{
-					WLAN_SMART_CONFIG_START = 1;
-				}
 			}
 			WLAN_CONNECTED = 0;
 			WLAN_DHCP = 0;
@@ -339,6 +399,11 @@ void WLAN_Async_Callback(long lEventType, char *data, unsigned char length)
 
 		case HCI_EVENT_CC3000_CAN_SHUT_DOWN:
 			WLAN_CAN_SHUTDOWN = 1;
+			break;
+
+                case HCI_EVNT_WLAN_ASYNC_PING_REPORT:
+		        memcpy(&ping_report,data,length);
+		        ping_report_num++;
 			break;
 
 		case HCI_EVNT_BSD_TCP_CLOSE_WAIT:
@@ -403,23 +468,14 @@ void SPARK_WLAN_Setup(void (*presence_announcement_callback)(void))
 	SPARK_LED_FADE = 0;
 
 	/* Mask out all non-required events from CC3000 */
-	wlan_set_event_mask(HCI_EVNT_WLAN_KEEPALIVE | HCI_EVNT_WLAN_UNSOL_INIT | HCI_EVNT_WLAN_ASYNC_PING_REPORT);
+	wlan_set_event_mask(HCI_EVNT_WLAN_KEEPALIVE | HCI_EVNT_WLAN_UNSOL_INIT);
 
 	if(NVMEM_SPARK_Reset_SysFlag == 0x0001 || nvmem_read(NVMEM_SPARK_FILE_ID, NVMEM_SPARK_FILE_SIZE, 0, NVMEM_Spark_File_Data) != NVMEM_SPARK_FILE_SIZE)
 	{
 		/* Delete all previously stored wlan profiles */
 		wlan_ioctl_del_profile(255);
 
-		/* EEPROM because Spark file IO on old TI Driver was corrupting nvmem
-		 * Let's Remove entry for Spark File in CC3000  */
-                nvmem_create_entry(NVMEM_SPARK_FILE_ID, 0);
-
-                /* Create new entry for Spark File in CC3000 EEPROM */
-                nvmem_create_entry(NVMEM_SPARK_FILE_ID, NVMEM_SPARK_FILE_SIZE);
-
-		memset(NVMEM_Spark_File_Data,0, arraySize(NVMEM_Spark_File_Data));
-
-		nvmem_write(NVMEM_SPARK_FILE_ID, NVMEM_SPARK_FILE_SIZE, 0, NVMEM_Spark_File_Data);
+		recreate_spark_nvmem_file();
 
 		NVMEM_SPARK_Reset_SysFlag = 0x0000;
 		Save_SystemFlags();
@@ -460,9 +516,9 @@ void SPARK_WLAN_Setup(void (*presence_announcement_callback)(void))
 void SPARK_WLAN_Loop(void)
 {
   static int cfod_count = 0;
+  KICK_WDT();
 
   ON_EVENT_DELTA();
-
   spark_loop_total_millis = 0;
 
   if (SPARK_WLAN_RESET || SPARK_WLAN_SLEEP || WLAN_WD_TO())
@@ -545,6 +601,19 @@ void SPARK_WLAN_Loop(void)
     WLAN_SMART_CONFIG_STOP = 0;
   }
 
+  if (WLAN_DHCP && !SPARK_WLAN_SLEEP)
+  {
+	if (ip_config.aucIP[3] == 0)
+	{
+	  Delay(100);
+      netapp_ipconfig(&ip_config);
+	}
+  }
+  else if (ip_config.aucIP[3] != 0)
+  {
+    memset(&ip_config, 0, sizeof(tNetappIpconfigRetArgs));
+  }
+
   if (SPARK_CLOUD_CONNECT == 0)
   {
     if (SPARK_CLOUD_SOCKETED || SPARK_CLOUD_CONNECTED)
@@ -564,10 +633,6 @@ void SPARK_WLAN_Loop(void)
 
   if (WLAN_DHCP && !SPARK_WLAN_SLEEP && !SPARK_CLOUD_SOCKETED)
   {
-    Delay(100);
-
-    netapp_ipconfig(&ip_config);
-
     if (Spark_Error_Count)
     {
       LED_SetRGBColor(RGB_COLOR_RED);
@@ -645,17 +710,17 @@ void SPARK_WLAN_Loop(void)
         if (0 > err)
         {
           // Wrong key error, red
-          LED_SetRGBColor(0xff0000);
+          LED_SetRGBColor(RGB_COLOR_RED);
         }
         else if (1 == err)
         {
           // RSA decryption error, orange
-          LED_SetRGBColor(0xff6000);
+          LED_SetRGBColor(RGB_COLOR_ORANGE);
         }
         else if (2 == err)
         {
           // RSA signature verification error, magenta
-          LED_SetRGBColor(0xff00ff);
+          LED_SetRGBColor(RGB_COLOR_MAGENTA);
         }
 
         LED_On(LED_RGB);

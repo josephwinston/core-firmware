@@ -52,28 +52,30 @@ STM32_Pin_Info PIN_MAP[TOTAL_PINS] =
  * timer_peripheral (TIM2 - TIM4, or NONE)
  * timer_ch (1-4, or NONE)
  * pin_mode (NONE by default, can be set to OUTPUT, INPUT, or other types)
+ * timer_ccr (0 by default, store the CCR value for TIM interrupt use)
+ * user_property (0 by default, user variable storage)
  */
-  { GPIOB, GPIO_Pin_7, NONE, TIM4, TIM_Channel_2, (PinMode)NONE },
-  { GPIOB, GPIO_Pin_6, NONE, TIM4, TIM_Channel_1, (PinMode)NONE },
-  { GPIOB, GPIO_Pin_5, NONE, NULL, NONE, (PinMode)NONE },
-  { GPIOB, GPIO_Pin_4, NONE, NULL, NONE, (PinMode)NONE },
-  { GPIOB, GPIO_Pin_3, NONE, NULL, NONE, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_15, NONE, NULL, NONE, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_14, NONE, NULL, NONE, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_13, NONE, NULL, NONE, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_8, NONE, NULL, NONE, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_9, NONE, NULL, NONE, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_0, ADC_Channel_0, TIM2, TIM_Channel_1, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_1, ADC_Channel_1, TIM2, TIM_Channel_2, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_4, ADC_Channel_4, NULL, NONE, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_5, ADC_Channel_5, NULL, NONE, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_6, ADC_Channel_6, TIM3, TIM_Channel_1, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_7, ADC_Channel_7, TIM3, TIM_Channel_2, (PinMode)NONE },
-  { GPIOB, GPIO_Pin_0, ADC_Channel_8, TIM3, TIM_Channel_3, (PinMode)NONE },
-  { GPIOB, GPIO_Pin_1, ADC_Channel_9, TIM3, TIM_Channel_4, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_3, ADC_Channel_3, TIM2, TIM_Channel_4, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_2, ADC_Channel_2, TIM2, TIM_Channel_3, (PinMode)NONE },
-  { GPIOA, GPIO_Pin_10, NONE, NULL, NONE, (PinMode)NONE }
+  { GPIOB, GPIO_Pin_7, NONE, TIM4, TIM_Channel_2, (PinMode)NONE, 0, 0 },
+  { GPIOB, GPIO_Pin_6, NONE, TIM4, TIM_Channel_1, (PinMode)NONE, 0, 0 },
+  { GPIOB, GPIO_Pin_5, NONE, NULL, NONE, (PinMode)NONE, 0, 0 },
+  { GPIOB, GPIO_Pin_4, NONE, NULL, NONE, (PinMode)NONE, 0, 0 },
+  { GPIOB, GPIO_Pin_3, NONE, NULL, NONE, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_15, NONE, NULL, NONE, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_14, NONE, NULL, NONE, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_13, NONE, NULL, NONE, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_8, NONE, NULL, NONE, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_9, NONE, NULL, NONE, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_0, ADC_Channel_0, TIM2, TIM_Channel_1, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_1, ADC_Channel_1, TIM2, TIM_Channel_2, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_4, ADC_Channel_4, NULL, NONE, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_5, ADC_Channel_5, NULL, NONE, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_6, ADC_Channel_6, TIM3, TIM_Channel_1, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_7, ADC_Channel_7, TIM3, TIM_Channel_2, (PinMode)NONE, 0, 0 },
+  { GPIOB, GPIO_Pin_0, ADC_Channel_8, TIM3, TIM_Channel_3, (PinMode)NONE, 0, 0 },
+  { GPIOB, GPIO_Pin_1, ADC_Channel_9, TIM3, TIM_Channel_4, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_3, ADC_Channel_3, TIM2, TIM_Channel_4, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_2, ADC_Channel_2, TIM2, TIM_Channel_3, (PinMode)NONE, 0, 0 },
+  { GPIOA, GPIO_Pin_10, NONE, NULL, NONE, (PinMode)NONE, 0, 0 }
 };
 
 /*
@@ -175,7 +177,7 @@ void pinMode(uint16_t pin, PinMode setMode)
 void digitalWrite(uint16_t pin, uint8_t value)
 {
 	if (pin >= TOTAL_PINS || PIN_MAP[pin].pin_mode == INPUT
-	|| PIN_MAP[pin].pin_mode == INPUT_PULLUP|| PIN_MAP[pin].pin_mode == INPUT_PULLDOWN
+	|| PIN_MAP[pin].pin_mode == INPUT_PULLUP || PIN_MAP[pin].pin_mode == INPUT_PULLDOWN
 	|| PIN_MAP[pin].pin_mode == AN_INPUT || PIN_MAP[pin].pin_mode == NONE)
 	{
 		return;
@@ -220,40 +222,46 @@ void digitalWrite(uint16_t pin, uint8_t value)
  */
 int32_t digitalRead(uint16_t pin)
 {
-	if (pin >= TOTAL_PINS || PIN_MAP[pin].pin_mode == OUTPUT || PIN_MAP[pin].pin_mode == NONE)
+	if (pin >= TOTAL_PINS || PIN_MAP[pin].pin_mode == NONE
+	|| PIN_MAP[pin].pin_mode == AF_OUTPUT_PUSHPULL || PIN_MAP[pin].pin_mode == AF_OUTPUT_DRAIN)
 	{
-		return -1;
+		return LOW;
 	}
 
 	// SPI safety check
 	if (SPI.isEnabled() == true && (pin == SCK || pin == MOSI || pin == MISO))
 	{
-		return -1;
+		return LOW;
 	}
 
 	// I2C safety check
 	if (Wire.isEnabled() == true && (pin == SCL || pin == SDA))
 	{
-		return -1;
+		return LOW;
 	}
 
 	// Serial1 safety check
 	if (Serial1.isEnabled() == true && (pin == RX || pin == TX))
 	{
-		return -1;
+		return LOW;
 	}
 
 	if(PIN_MAP[pin].pin_mode == AN_INPUT)
 	{
-		if(digitalPinModeSaved == OUTPUT || digitalPinModeSaved == NONE)
+		if(digitalPinModeSaved == NONE)
 		{
-			return -1;
+			return LOW;
 		}
 		else
 		{
 			//Restore the PinMode after calling analogRead on same pin earlier
 			pinMode(pin, digitalPinModeSaved);
 		}
+	}
+
+	if(PIN_MAP[pin].pin_mode == OUTPUT)
+	{
+		return GPIO_ReadOutputDataBit(PIN_MAP[pin].gpio_peripheral, PIN_MAP[pin].gpio_pin);
 	}
 
 	return GPIO_ReadInputDataBit(PIN_MAP[pin].gpio_peripheral, PIN_MAP[pin].gpio_pin);
@@ -384,24 +392,24 @@ int32_t analogRead(uint16_t pin)
 	// SPI safety check
 	if (SPI.isEnabled() == true && (pin == SCK || pin == MOSI || pin == MISO))
 	{
-		return -1;
+		return LOW;
 	}
 
 	// I2C safety check
 	if (Wire.isEnabled() == true && (pin == SCL || pin == SDA))
 	{
-		return -1;
+		return LOW;
 	}
 
 	// Serial1 safety check
 	if (Serial1.isEnabled() == true && (pin == RX || pin == TX))
 	{
-		return -1;
+		return LOW;
 	}
 
 	if (pin >= TOTAL_PINS || PIN_MAP[pin].adc_channel == NONE )
 	{
-		return -1;
+		return LOW;
 	}
 
 	int i = 0;
@@ -534,11 +542,17 @@ void analogWrite(uint16_t pin, uint8_t value)
 
 	// TIM clock enable
 	if(PIN_MAP[pin].timer_peripheral == TIM2)
+	{
 		RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+	}
 	else if(PIN_MAP[pin].timer_peripheral == TIM3)
+	{
 		RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+	}
 	else if(PIN_MAP[pin].timer_peripheral == TIM4)
+	{
 		RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
+	}
 
 	// Time base configuration
 	TIM_TimeBaseStructure.TIM_Period = TIM_ARR;
@@ -622,6 +636,8 @@ void delay(unsigned long ms)
 
 	while (1)
 	{
+	        KICK_WDT();
+
 		volatile system_tick_t current_millis = GetSystem1MsTick();
 		volatile long elapsed_millis = current_millis - last_millis;
 

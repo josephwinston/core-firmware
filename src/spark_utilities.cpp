@@ -30,7 +30,6 @@
 #include "netapp.h"
 #include "string.h"
 #include <stdarg.h>
-#include "spark_protocol.h"
 
 SparkProtocol spark_protocol;
 
@@ -198,6 +197,76 @@ void SparkClass::publish(const char *eventName, const char *eventData, int ttl)
 void SparkClass::publish(const char *eventName, const char *eventData, int ttl, Spark_Event_TypeDef eventType)
 {
   spark_protocol.send_event(eventName, eventData, ttl, (eventType ? EventType::PRIVATE : EventType::PUBLIC));
+}
+
+void SparkClass::publish(String eventName)
+{
+  publish(eventName.c_str());
+}
+
+void SparkClass::publish(String eventName, String eventData)
+{
+  publish(eventName.c_str(), eventData.c_str());
+}
+
+void SparkClass::publish(String eventName, String eventData, int ttl)
+{
+  publish(eventName.c_str(), eventData.c_str(), ttl);
+}
+
+void SparkClass::publish(String eventName, String eventData, int ttl, Spark_Event_TypeDef eventType)
+{
+  publish(eventName.c_str(), eventData.c_str(), ttl, eventType);
+}
+
+bool SparkClass::subscribe(const char *eventName, EventHandler handler)
+{
+  bool success = spark_protocol.add_event_handler(eventName, handler);
+  if (success)
+  {
+    success = spark_protocol.send_subscription(eventName, SubscriptionScope::FIREHOSE);
+  }
+  return success;
+}
+
+bool SparkClass::subscribe(const char *eventName, EventHandler handler, Spark_Subscription_Scope_TypeDef scope)
+{
+  bool success = spark_protocol.add_event_handler(eventName, handler);
+  if (success)
+  {
+    success = spark_protocol.send_subscription(eventName, SubscriptionScope::MY_DEVICES);
+  }
+  return success;
+}
+
+bool SparkClass::subscribe(const char *eventName, EventHandler handler, const char *deviceID)
+{
+  bool success = spark_protocol.add_event_handler(eventName, handler);
+  if (success)
+  {
+    success = spark_protocol.send_subscription(eventName, deviceID);
+  }
+  return success;
+}
+
+bool SparkClass::subscribe(String eventName, EventHandler handler)
+{
+  return subscribe(eventName.c_str(), handler);
+}
+
+bool SparkClass::subscribe(String eventName, EventHandler handler, Spark_Subscription_Scope_TypeDef scope)
+{
+  return subscribe(eventName.c_str(), handler, scope);
+}
+
+bool SparkClass::subscribe(String eventName, EventHandler handler, String deviceID)
+{
+  return subscribe(eventName.c_str(), handler, deviceID.c_str());
+}
+
+void SparkClass::syncTime(void)
+{
+  spark_protocol.send_time_request();
 }
 
 void SparkClass::sleep(Spark_Sleep_TypeDef sleepMode, long seconds)
@@ -373,10 +442,10 @@ void Spark_Finish_Firmware_Update(void)
   FLASH_End();
 }
 
-void Spark_Save_Firmware_Chunk(unsigned char *buf, long unsigned int buflen)
+uint16_t Spark_Save_Firmware_Chunk(unsigned char *buf, long unsigned int buflen)
 {
   TimingFlashUpdateTimeout = 0;
-  FLASH_Update(buf, buflen);
+  return FLASH_Update(buf, buflen);
 }
 
 int numUserFunctions(void)
@@ -438,6 +507,7 @@ void Spark_Protocol_Init(void)
     callbacks.save_firmware_chunk = Spark_Save_Firmware_Chunk;
     callbacks.signal = Spark_Signal;
     callbacks.millis = millis;
+    callbacks.set_time = Time.setTime;
 
     SparkDescriptor descriptor;
     descriptor.num_functions = numUserFunctions;
@@ -469,7 +539,16 @@ int Spark_Handshake(void)
   Spark_Protocol_Init();
   spark_protocol.reset_updating();
   int err = spark_protocol.handshake();
+
   Multicast_Presence_Announcement();
+  spark_protocol.send_time_request();
+
+  unsigned char patchver[2];
+  nvmem_read_sp_version(patchver);
+  char patchstr[8];
+  snprintf(patchstr, 8, "%d.%d", patchver[0], patchver[1]);
+  Spark.publish("spark/cc3000-patch-version", patchstr, 60, PRIVATE);
+
   return err;
 }
 
